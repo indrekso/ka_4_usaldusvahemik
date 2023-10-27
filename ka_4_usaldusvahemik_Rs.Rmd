@@ -1,0 +1,263 @@
+---
+title: "Usalduspiiride arvutamine R-s"
+author: "Indrek Soidla"
+date: '2023-10-20'
+output: 
+  html_document:
+    theme: spacelab
+    highlight: tango
+    fig_cap: true
+    toc: true
+    toc_float: true
+    toc_depth: 3
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+Laeme sisse tööks vajalikud paketid.
+
+```{r message = FALSE}
+library(haven)
+library(tidyverse)
+# install.packages("survey")
+library(survey)
+```
+
+## Usalduspiiride arvutamine
+
+Vaatame, kuidas arvutada samu usalduspiire, mis olid kasutatud näidetena õppevideotes.
+
+Loeme sisse ESS-i 8. laine andmed ja eraldame Eesti andmed.
+
+```{r}
+r8 <- read_spss("data/ESS8e02_2.sav")
+
+ee8 <- r8 %>% 
+  filter(cntry == "EE")
+```
+
+Kasutame usalduspiiride arvutamiseks paketti `survey`, sest see võimaldab arvutada usalduspiirid kaalutud andmetega.
+
+Selle paketi funktsioonide kasutamisel tuleb andmete kaalumiseks esmalt luua objekt, kus oleks valimidisaini kirjeldus koos kaaludega. Vastav funktsioon on `svydesign`, selle argumentidena tuleb täpsustada 
+
+- `id`, mille väärtuseks antud juhul saab ~1, sest Eestis ei kasutatud valimi koostamisel klastreid ehk tegu polnud klastervalimiga. Kui tegu oleks klastervalimiga, siis oleks see oluline info, sest valimiliikmete kuulumine klastritesse üldiselt mõnevõrra vähendab valimi esinduslikkust, mis omakorda tähendab keerulisemat usalduspiiride arvutust ja laiemat usaldusvahemikku;
+- `data` ehk andmestik;
+- `weights` ehk kaalutunnus. Kõigi Euroopa Sotsiaaluuringu küsitluslainete andmestikes on kolm kaalutunnust: disainikaal `dweight`, järelkihistamiskaal `pspwght` ja populatsioonikaal `pweight`. Disainikaalu eesmärk on arvestada valimi koostamise eripäradest tulenevaid kõrvalekaldeid andmete esinduslikkuses, järelkihistamiskaalu eesmärk on arvesse võtta mittevastamisest tulenevaid kõrvalekaldeid. Me ei jõua siin lähemalt laskuda eri tüüpi kaalude spetsiifikasse; pakett `survey` on eelkõige mõeldud disainikaalude rakendamiseks, aga kuna varasemalt oleme punkthinnangud arvutanud järelkihistuskaalu tunnuse abil, siis võrreldavuse huvides kasutame seda ka siin (praktikas seda ka tihti tehakse, olgugi et standardvead tulevad natuke konservatiivsemad ja usaldusvahemikud natuke laiemad kui disainikaaludega).
+
+```{r}
+ee8w <- svydesign(id = ~1, data = ee8, weights = ~pspwght)
+```
+
+Saadud valimidisaini objekti kasutame edasiste arvutuste tegemisel. Arvutame eluga rahulolu keskmise koos standardveaga, kasutades funktsiooni `svymean`. Siin tuleb argumentidena ette anda eluga rahulolu tunnus, valimidisaini objekt, lisaks vajadusel täpsustada andmelünkade eemaldamine. Kuna valimidisaini objektis on kirjeldatud ka andmestik, siis siin eraldi andmestiku nime kuskil defineerima ei pea, samal põhjusel pole vaja ka eraldi defineerida kaalutunnust.
+
+```{r}
+svymean(~stflife, design = ee8w, na.rm = TRUE)
+```
+
+Lisaks keskmisele saame selle standardvea, mille alusel saaksime ka ise usalduspiirid arvutada. Lihtsam on seda siiski teha funktsiooni `confint` abiga, mis vaikeseadena annab usalduspiirid usaldusnivool 95%. Kui soovime usalduspiire muul usaldusnivool, peame selle käsus täpsustama.
+
+```{r}
+svymean(~stflife, design = ee8w, na.rm = TRUE) %>% 
+  confint(level = 0.9)
+
+svymean(~stflife, design = ee8w, na.rm = TRUE) %>% 
+  confint()
+
+svymean(~stflife, design = ee8w, na.rm = TRUE) %>% 
+  confint(level = 0.99)
+```
+
+## Usalduspiiride arvutamine grupiti 
+
+Arvutame ka eluga rahulolu aritmeetilised keskmised ja nende usalduspiirid regiooniti ja esitame need vahemikdiagrammil nagu õppevideos. Enne loome uue regiooni tunnuse, kus on koodide asemel regioonide nimed. Pange tähele, et kuna soovime usalduspiiride arvutamisel kasutada uut andmestikku lisatud tunnust, siis tuleb pärast seda ka valimidisaini objekt uuesti defineerida, sest selle aluseks olev andmestik on muutunud.
+
+```{r}
+ee8 <- ee8 %>% 
+  mutate(region2 = sjlabelled::as_label(region))
+
+ee8w <- svydesign(id = ~1, data = ee8, weights = ~pspwght)
+```
+
+Grupiti usalduspiiride arvutamiseks kasutame funktsiooni `svyby`, mis on eelnevaga analoogne, aga eraldi tuleb defineerida 
+
+- grupeeriv tunnus (teine argument); 
+- funktsioon, mille alusel midagi arvutame (argument `FUN`);
+- milliseid tulemusi väljundisse soovime (argument `vartype`, "se" tähendab standardviga, "ci" usalduspiire)
+
+```{r}
+svyby(~stflife, ~region2, design = ee8w, FUN = svymean, na.rm = TRUE, vartype = c("se", "ci"))
+```
+
+Kui soovime usalduspiirid esitada vahemikdiagrammil, võtame andmeteks eelneva keskmiste ja usalduspiiride tabeli ja söödame selle ette `ggplot`-ile. Aritmeetilised keskmised esitame punktidena funktsiooniga `geom_point`, usalduspiirid funktsiooniga `geom_errorbar`, kus tuleb täpsustada, millistes andmestiku veergudes on alumise ja ülemise usalduspiiri andmed, samuti saab defineerida nt usalduspiiride joonte laiuse ja värvi.
+
+```{r fig.cap = "*Joonis 1. Eluga rahulolu regiooniti, aritmeetilised keskmised ja usaldusvahemikud usaldusnivool 95%. Andmed: Euroopa Sotsiaaluuring 2016.*"}
+svyby(~stflife, ~region2, design = ee8w, FUN = svymean, na.rm = TRUE, vartype = c("se", "ci")) %>% 
+  ggplot(mapping = aes(x = region2, y = stflife)) +
+  geom_point(stat = "identity") +
+  geom_errorbar(aes(ymin = ci_l, ymax = ci_u), width = 0.1, color = "black") +
+  labs(x = "Regioon",
+       y = "Eluga rahulolu")
+```
+
+Teeme läbi veel ühe näite grupiti usaldusvahemike arvutamise kohta. Milline oli eluga rahulolu nende seas, kes küsitluse seisuga viimastel Riigikogu valimistel kas hääletasid, ei hääletanud või ei omanud valimisõigust? 
+
+```{r}
+ee8 <- ee8 %>% 
+  mutate(vote2 = recode(as.factor(vote),
+                          "1" = "Hääletas",
+                          "2" = "Ei hääletanud",
+                          "3" = "Polnud valimisõigust"))
+
+ee8w <- svydesign(id = ~1, data = ee8, weights = ~pspwght)
+```
+
+```{r fig.cap = "*Joonis 2. Eluga rahulolu valimistel osalemise lõikes, aritmeetilised keskmised ja usaldusvahemikud usaldusnivool 95%. Andmed: Euroopa Sotsiaaluuring 2016.*"}
+svyby(~stflife, ~vote2, design = ee8w, FUN = svymean, na.rm = TRUE, vartype = c("se", "ci")) %>% 
+  ggplot(aes(x = vote2, y = stflife)) +
+  geom_point(stat = "identity") +
+  geom_errorbar(aes(ymin = ci_l, ymax = ci_u), width = 0.1, color = "black") +
+  labs(x = "Riigikogu valimistel osalemine",
+       y = "Eluga rahulolu")
+```
+
+Jooniselt on näha, et kõrgeim oli eluga rahulolu nende seas, kes hääletasid valimistel, usaldusnivool 95% saab järeldada, et keskmise tegelik väärtus jääb selles grupis vahemikku umbes 7-7,2. Hääletanute keskmise usaldusvahemik ei kattu teiste gruppide usaldusvahemikega, sellest saame järeldada, et hääletanute eluga rahulolu keskmiselt erineb ka populatsioonis. Mittehääletanute ja valimisõigust mitte omanute eluga rahulolus seevastu erinevust ei saa väita, usaldusvahemikud kattuvad väga suurel määral. 
+
+Antud näide kõlbab pigem tehniliseks analüüsiks, sisulisi järeldusi oleks siit keeruline teha, sest eluga rahulolu on mõõdetud poolteist aastat pärast valimisi, mitte enne valimisi.
+
+## Ülesanne 1
+
+Laadige sisse ESS-i 9. laine andmed (projekti kaustas `data/`). Seal esineb tunnus `wrkac6m`, milles on andmed selle kohta, kas vastaja on viimase kümne aasta jooksul vähemalt kuus kuud töötanud välismaal. Samuti on andmestikus tunnus `imbgeco`, milles on vastajate vastused küsimusele, kas sisseränne on riigi majandusele üldiselt halb või hea. 
+
+- Mida saab öelda Eesti inimeste arvamuste kohta selle osas, kuidas sisseränne mõjutab majandust? 
+- Millised on need arvamused keskmiselt nende seas, kes ise on olnud sisserändajad ja võõrtööjõu esindajad muus riigis, ja nende seas, kes pole? 
+- Kas saab väita, et nende kahe grupi seas arvamused keskmiselt erinevad?
+
+Kasutage arvutustes usaldusnivood 95%.
+
+Esitage skriptifailis kood (sh kommenteerige **lühidalt**, mida mingi käsk teeb) ja vastused ülal esitatud küsimustele. Nagu ikka, kandke hoolt selle eest, et teie skriptifailis olev kood töötaks ka muudes arvutites, st lisage ka pakettide sisselaadimise käsud ja andmete sisselugemise käsud (suhteliste failiaadressidega) ning muude vajalike objektide loomise käsud. Proovige ülesanne teha kõigepealt iseseisvalt eelneva koodi põhjal. Kui see ei õnnestu, siis…
+
+<details>
+  <summary>väljundi nägemiseks klikkige siia</summary>
+```{r echo = FALSE}
+r9 <- read_spss("data/ess9.sav")
+
+ee9 <- r9 %>% 
+  filter(cntry == "EE")
+
+ee9 <- ee9 %>% 
+  mutate(wrkac6m2 = recode(as.factor(wrkac6m),
+                           "1" = "On töötanud",
+                           "2" = "Ei ole töötanud"))
+
+ee9w <- svydesign(id = ~1, strata = ~stratum, data = ee9, weights = ~pspwght)
+
+svymean(~imbgeco, design = ee9w, na.rm = TRUE)
+
+svymean(~imbgeco, design = ee9w, na.rm = TRUE) %>% 
+  confint()
+```
+
+```{r fig.cap = "*Joonis 3. Hinnang sisserände majanduslikule mõjule välismaal töötamise kogemuse lõikes, keskmised ja usaldusvahemikud usaldusnivool 95%. Euroopa Sotsiaaluuring 2016, Eesti andmed.*"}
+svyby(~imbgeco, ~wrkac6m2, design = ee9w, FUN = svymean, na.rm = TRUE, vartype = c("se", "ci")) %>% 
+  ggplot(aes(x = wrkac6m2, y = imbgeco)) +
+  geom_point(stat = "identity") +
+  geom_errorbar(aes(ymin = ci_l, ymax = ci_u), width = 0.1, color = "black") +
+  labs(x = "Viimase 10 aasta jooksul >6 kuud välismaal töötamine",
+       y = "Hinnang sisserände mõjule majandusele, keskmine skaalal 0-10")
+```
+</details> 
+
+<details>
+  <summary>koodi nägemiseks klikkige siia</summary>
+```{r eval = FALSE}
+r9 <- read_spss("data/ess9.sav")
+
+ee9 <- r9 %>% 
+  filter(cntry == "EE")
+
+ee9 <- ee9 %>% 
+  mutate(wrkac6m2 = recode(as.factor(wrkac6m),
+                           "1" = "On töötanud",
+                           "2" = "Ei ole töötanud"))
+```
+
+Alates Euroopa Sotsiaaluuringu 9. lainest on andmestikes ka valimi võtmist kirjeldavad tunnused, sh kihi tunnus `stratum` - kui mingis riigis kasutati valimi võtmisel kihtvalikut, on selles tunnuses eristatud kihid, st iga vastaja kohta on kirjas, millisesse valikukihti ta kuulus. Eestis kasutati kihtvalimit (populatsioon kihistati soo ja regiooni tunnuste alusel), seetõttu oleks täpne käsus `svydesign` kirja panna ka valimikihtide argument `strata = ~stratum`. Antud juhul see küll usalduspiiride väärtusi eriti ei muuda.
+
+```{r eval = FALSE}
+ee9w <- svydesign(id = ~1, strata = ~stratum, data = ee9, weights = ~pspwght)
+
+svymean(~imbgeco, design = ee9w, na.rm = TRUE)
+
+svymean(~imbgeco, design = ee9w, na.rm = TRUE) %>% 
+  confint()
+
+svyby(~imbgeco, ~wrkac6m2, design = ee9w, FUN = svymean, na.rm = TRUE, vartype = c("se", "ci")) %>% 
+  ggplot(aes(x = wrkac6m2, y = imbgeco)) +
+  geom_point(stat = "identity") +
+  geom_errorbar(aes(ymin = ci_l, ymax = ci_u), width = 0.1, color = "black") +
+  labs(x = "Viimase 10 aasta jooksul >6 kuud välismaal töötamine",
+       y = "Hinnang sisserände mõjule majandusele, keskmine skaalal 0-10")
+```
+</details> 
+
+
+## Ülesanne 2
+
+Eelneva ülesande tulemustest ilmnes, et ei saa väita, et välismaal töötanute arvamused sisserände mõju osas majandusele erineksid keskmiselt välismaal mittetöötanute omadest (usaldusvahemikud kattusid suures osas, esimese grupi keskmine ei olnud küll teise grupi usaldusvahemikus, aga igal juhul lisa-analüüse tegemata keskmiste erinevust väita ei saa). Kas erinevused võivad siiski esineda, kui eristada mõlemas grupis arvamused haridustaseme alusel? Uurige tunnuse `imbgeco` keskmisi ja nende usaldusvahemikke (usaldusnivool 95%), eristades välismaal töötanute ja mittetöötanute seas kõrgharidusega ja kõrghariduseta inimeste hinnangud sisserände majandusliku mõju kohta. Mida saate siin gruppide erinevuste kohta öelda, milliseid sisulisi järeldusi teha?
+
+Haridustaseme tunnus on `edlvdee`, kõrghariduse koodid on vahemikud 600 kuni 1000 (pange tähele, et ühel indiviidil on ka kood 5555, millega pole midagi peale hakata, selle võib ümber kodeerida andmelüngaks).
+
+Esitage skriptifailis kood (sh kommenteerige **lühidalt**, mida mingi käsk teeb) ja vastused ülal esitatud küsimustele. Nagu ikka, kandke hoolt selle eest, et teie skriptifailis olev kood töötaks ka muudes arvutites, st lisage ka pakettide sisselaadimise käsud ja andmete sisselugemise käsud (suhteliste failiaadressidega) ning muude vajalike objektide loomise käsud. Proovige ülesanne teha kõigepealt iseseisvalt eelneva koodi põhjal. Kui see ei õnnestu, siis…
+
+<details>
+  <summary>vihje nägemiseks klikkige siia</summary>
+Sisulisest poolest ei erine käesolev ülesanne eriti eelnevast, põhiline erinevus on tehniline. Enne usalduspiiride arvutamist on tarvis luua tunnuste `wrkac6m` ja `edlvdee` põhjal uus tunnus, kus oleks neli kategooriat. Ilmselt on kõige lihtsam teha seda funktsioonidega `case_when` ja `mutate`, varasemast saate nende kasutamise meelde tuletada.
+
+Ilmselt tulevad uue tunnuse kategooriate nimetused küllaltki pikad, seetõttu võib joonise puhul olla mõttekas vahetada funktsiooniga `coord_flip` teljed. Kategooriate nimetused võivad ka siis liiga pikad olla, sel juhul saab kategooria nimetuse esitada mitmel real, kasutades nimetuses reavahetuse kohas *newline* sümbolit `/n`.
+</details>
+
+<details>
+  <summary>väljundi nägemiseks klikkige siia</summary>
+```{r echo = FALSE}
+ee9 <- ee9 %>% 
+  mutate(har_emigr = case_when(wrkac6m == 1 & edlvdee > 600 & edlvdee < 1000 ~ "On välismaal töötanud,\nkõrgharidusega",
+                               wrkac6m == 1 & edlvdee < 600 ~ "On välismaal töötanud,\nilma kõrghariduseta",
+                               wrkac6m == 2 & edlvdee > 600 & edlvdee < 1000 ~ "Pole välismaal töötanud,\nkõrgharidusega",
+                               wrkac6m == 2 & edlvdee < 600 ~ "Pole välismaal töötanud,\nilma kõrghariduseta"))
+
+ee9w <- svydesign(id = ~1, strata = ~stratum, data = ee9, weights = ~pspwght)
+```
+
+```{r echo = FALSE, fig.cap = "*Joonis 4. Hinnang sisserände majanduslikule mõjule välismaal töötamise kogemuse ja haridustaseme lõikes, keskmised ja usaldusvahemikud usaldusnivool 95%. Euroopa Sotsiaaluuring 2016, Eesti andmed.*"}
+svyby(~imbgeco, ~har_emigr, design = ee9w, FUN = svymean, na.rm = TRUE, vartype = c("se", "ci")) %>% 
+  ggplot(aes(x = har_emigr, y = imbgeco)) +
+  geom_point(stat = "identity") +
+  geom_errorbar(aes(ymin = ci_l, ymax = ci_u), width = 0.1, color = "black") +
+  labs(x = "Viimase 10 aasta jooksul >6 kuud välismaal töötamine, haridustase",
+       y = "Hinnang sisserände mõjule majandusele, keskmine skaalal 0-10") +
+  coord_flip()
+```
+</details>
+
+<details>
+  <summary>koodi nägemiseks klikkige siia</summary>
+```{r eval = FALSE}
+ee9 <- ee9 %>% 
+  mutate(har_emigr = case_when(wrkac6m == 1 & edlvdee > 600 & edlvdee < 1000 ~ "On välismaal töötanud,\nkõrgharidusega",
+                               wrkac6m == 1 & edlvdee < 600 ~ "On välismaal töötanud,\nilma kõrghariduseta",
+                               wrkac6m == 2 & edlvdee > 600 & edlvdee < 1000 ~ "Pole välismaal töötanud,\nkõrgharidusega",
+                               wrkac6m == 2 & edlvdee < 600 ~ "Pole välismaal töötanud,\nilma kõrghariduseta"))
+
+ee9w <- svydesign(id = ~1, strata = ~stratum, data = ee9, weights = ~pspwght)
+
+svyby(~imbgeco, ~har_emigr, design = ee9w, FUN = svymean, na.rm = TRUE, vartype = c("se", "ci")) %>% 
+  ggplot(aes(x = har_emigr, y = imbgeco)) +
+  geom_point(stat = "identity") +
+  geom_errorbar(aes(ymin = ci_l, ymax = ci_u), width = 0.1, color = "black") +
+  labs(x = "Viimase 10 aasta jooksul >6 kuud välismaal töötamine, haridustase",
+       y = "Hinnang sisserände mõjule majandusele, keskmine skaalal 0-10") +
+  coord_flip()
+```
+</details> 
