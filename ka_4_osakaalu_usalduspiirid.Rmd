@@ -1,0 +1,53 @@
+---
+title: "Usalduspiiride arvutamine osakaaludele"
+author: "Indrek Soidla"
+institute: "Tartu Ülikool, ühiskonnateaduste instituut"
+date: "2023/10/16 (updated: `r Sys.Date()`)"
+output:
+  xaringan::moon_reader:
+    self_contained: true
+    nature:
+      highlightStyle: github
+      highlightLines: true
+      countIncrementalSlides: false
+---
+
+```{r setup, include=FALSE}
+options(htmltools.dir.version = FALSE)
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+## Näide mitmeastmelise kihistatud valimi korral
+
+- Võtame näiteks ESS 10. laine Kreeka andmed, usaldus õigussüsteemi vastu
+
+- Kreekas kasutati 10. laines  [mitmeastmelist valimit koos kihistamisega](https://ess-search.nsd.no/en/study/172ac431-2a06-41df-9dab-c1fd8f3877e7)
+
+- Seetõttu tuleb valikudisaini määratlemisel defineerida tunnus, kus on kirjas klastrikuuluvus 
+
+- ESS-i andmestikus tunnus `psu`
+
+- Osakaalude ja usalduspiiride arvutamisel kasutame funktsiooni `survey_mean` asemel `survey_prop`, grupeerides eelnevalt andmestiku tunnuse põhjal, mille protsentjaotust (ehk osakaale) soovime saada
+
+```{r}
+ess10 <- haven::read_spss("data/ess10.sav")
+
+library(tidyverse)
+gr10 <- ess10 %>% 
+  filter(cntry == "GR")
+```
+
+---
+
+## Osakaalude ja nende usalduspiiride arvutamine
+
+```{r}
+library(srvyr)
+
+gr10_design <- gr10 %>% 
+  as_survey_design(id = psu, strata = stratum, weights = pspwght) #<<
+
+gr10_design %>% 
+  group_by(netusoft) %>% 
+  summarise(prop = survey_prop(vartype = "ci")) #<<
+```

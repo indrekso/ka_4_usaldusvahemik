@@ -13,7 +13,7 @@ output:
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
 ```
 
 Laadime sisse vajalikud paketid.
@@ -85,7 +85,7 @@ svymean(~trust, design = ee9w, na.rm = TRUE) %>%
   confint()
 ```
 
-Praktikumieelsetes materjalides olid keskmiste ja usalduspiiride arvutamise näited tehtud paketi `survey` abiga. Sel nädalal leidsin, et R-s on ka pakett `srvyr`, mis on analoogne paketile `survey`, aga kasutab meile juba tuttavat `dplyr`'i süntaksit (kus nt ei ole vaja tunnuste nimede ees kasutada `~` sümbolit) ning annab tibble-formaadis väljundi, mida on lihtsam töödelda. Siin on antud ülesande lahendus `srvyr` funktsioonidega.
+Praktikumieelsetes materjalides olid keskmiste ja usalduspiiride arvutamise näited tehtud paketi `survey` abiga. Sel nädalal leidsin, et R-s on ka pakett `srvyr`, mis on analoogne paketile `survey`, aga kasutab meile juba tuttavat `dplyr`'i süntaksit (kus nt ei ole vaja tunnuste nimede ees kasutada `~` sümbolit) ning annab *tibble*-formaadis väljundi. Siin on antud ülesande lahendus `srvyr` funktsioonidega.
 
 ```{r}
 ee9 <- ee9 %>% 
@@ -93,7 +93,7 @@ ee9 <- ee9 %>%
 
 ee9 %>% 
   as_survey_design(id = 1, strata = stratum, weights = pspwght) %>% 
-  summarise(trust_keskmine = survey_mean(trust, na.rm = TRUE))
+  summarise(trust_keskmine = survey_mean(trust, na.rm = TRUE, vartype = "ci"))
 ```
 
 ### Tõlgendus
@@ -162,88 +162,144 @@ a. Arvutage meeste ja naiste keskmiste usalduspiirid usaldusnivool 95%. Millises
 b. Kas usaldusvahemikud on kitsamad või laiemad kui eelnevalt kõigi vastajate pealt arvutatud usaldusvahemik? Miks see nii on? 
 c. Esitage keskmised ja usaldusvahemikud ka vahemikdiagrammil. Kas on alust väita keskmiste erinevust populatsioonis?
 d. Arvutage keskmiste usalduspiirid ka usaldusnivoodel 90% ja 99%. Kas kõigil usaldusnivoodel on alust väita keskmiste erinevust populatsioonis? Kui erinevust saab väita, siis kas on alust ka sisulises plaanis oluliste erinevuste väitmiseks?
-e. Kes soovib, võib proovida panna ühele joonisele kõigil usaldusnivoodel arvutatud usaldusvahemikud - praktikas seda eriti ei tehta, aga uurimaks, kuidas erinevatel usaldusnivoodel arvutatud usaldusvahemikud üksteisest erinevad ja mida saab nende alusel järeldada meeste ja naiste keskmiste erinevust kohta, on visuaalne lahendus asjakohane. Tuletagem meelde, et ggplot võimaldab ühele diagrammile paigutada kokku väga erinevaid visuaalseid elemente ehk `geom`-e. Erinevatel usaldusnivoodel arvutatud usaldusvahemikud saab ggploti käsku panna eraldi geom_errorbar käskudega (st kokku kolm käsku). Kuna usaldusvahemikud jäävad osaliselt üksteise peale, oleks mõttekas nad eristada värviga ja miks mitte ka joone paksusega.
+e. Kes soovib, võib proovida panna ühele joonisele kõigil usaldusnivoodel arvutatud usaldusvahemikud - praktikas seda eriti ei tehta, aga uurimaks, kuidas erinevatel usaldusnivoodel arvutatud usaldusvahemikud üksteisest erinevad ja mida saab nende alusel järeldada meeste ja naiste keskmiste erinevust kohta, on visuaalne lahendus asjakohane. Tuletagem meelde, et `ggplot` võimaldab ühele diagrammile paigutada kokku väga erinevaid visuaalseid elemente ehk `geom`-e. Erinevatel usaldusnivoodel arvutatud usaldusvahemikud saab ggploti käsku panna eraldi geom_errorbar käskudega (st kokku kolm käsku). Kuna usaldusvahemikud jäävad osaliselt üksteise peale, oleks mõttekas nad eristada värviga ja miks mitte ka joone paksusega.
 
 ### Tulemus 
 
-```{r echo = FALSE}
+Väljund paketiga `survey`
+
+```{r ex_3_survey, echo = FALSE}
 ee9 <- ee9 %>% 
   mutate(gndr2 = recode(as.factor(gndr),
                         "1" = "Mehed",
                         "2" = "Naised"))
 
-ee9w <- svydesign(id = ~1, data = ee9, weights = ~pspwght)
+ee9w <- svydesign(id = ~1, strata = ~stratum, data = ee9, weights = ~pspwght)
+svyby(~trust, ~gndr2, design = ee9w, FUN = svymean, na.rm = TRUE, vartype = c("ci"))
+```
 
-svyby(~trust, ~gndr2, design = ee9w, FUN = svymean, na.rm = TRUE, vartype = c("se", "ci"))
+Väljund paketiga `srvyr`
 
-svyby(~trust, ~gndr2, design = ee9w, FUN = svymean, na.rm = TRUE, vartype = c("se", "ci")) %>% 
-  ggplot(aes(gndr2, trust)) +
+```{r ex_3_srvyr, echo = FALSE}
+ee9 <- ee9 %>% 
+  mutate(gndr2 = recode(as.factor(gndr),
+                        "1" = "Mehed",
+                        "2" = "Naised"))
+
+ee9 %>% 
+  as_survey_design(id = 1, strata = stratum, weights = pspwght) %>% 
+  group_by(gndr2) %>% 
+  summarise(trust_keskmine = survey_mean(trust, na.rm = TRUE, vartype = "ci"))
+
+ee9 %>% 
+  as_survey_design(id = 1, strata = stratum, weights = pspwght) %>% 
+  group_by(gndr2) %>% 
+  summarise(trust_keskmine = survey_mean(trust, na.rm = TRUE, vartype = "ci")) %>% 
+ggplot(aes(x = gndr2, y = trust_keskmine)) +
   geom_point() +
-  geom_errorbar(aes(ymin = ci_l, ymax = ci_u), width = 0.1) +
-  xlab("Sugu") +
-  ylab("Eluga rahulolu")
-  
-svyby(~trust, ~gndr2, design = ee9w, FUN = svymean, na.rm = TRUE, vartype = "se") %>% 
-  confint(level = 0.9)
+  geom_errorbar(aes(ymin = trust_keskmine_low, ymax = trust_keskmine_upp), width = 0.1) +
+  labs(title = "Usaldus siseriiklike institutsioonide vastu soo lõikes",
+       subtitle = "Aritmeetilised keskmised usaldusvahemikega usaldusnivool 95%",
+       x = "Sugu",
+       y = "Usaldus (skaala 0-10)")
 
-svyby(~trust, ~gndr2, design = ee9w, FUN = svymean, na.rm = TRUE, vartype = "se") %>% 
-  confint(level = 0.99)
+trust_ci_levels <- ee9 %>% 
+  as_survey_design(id = 1, strata = stratum, weights = pspwght) %>% 
+  group_by(gndr2) %>% 
+  summarise(trust_keskmine_90 = survey_mean(trust, na.rm = TRUE, vartype = "ci", level = 0.9),
+            trust_keskmine_95 = survey_mean(trust, na.rm = TRUE, vartype = "ci", level = 0.95),
+            trust_keskmine_99 = survey_mean(trust, na.rm = TRUE, vartype = "ci", level = 0.99))
+
+trust_ci_levels 
+
+trust_ci_levels %>% 
+ggplot(aes(x = gndr2, y = trust_keskmine_95)) +
+  geom_point() +
+  geom_errorbar(aes(ymin = trust_keskmine_99_low, ymax = trust_keskmine_99_upp), width = 0.1) +
+  geom_errorbar(aes(ymin = trust_keskmine_95_low, ymax = trust_keskmine_95_upp), width = 0.1, colour = "blue") +
+  geom_errorbar(aes(ymin = trust_keskmine_90_low, ymax = trust_keskmine_90_upp), width = 0.1, colour = "red") +
+  labs(title = "Usaldus siseriiklike institutsioonide vastu soo lõikes",
+       subtitle = "Aritmeetilised keskmised usaldusvahemikega\nusaldusnivoodel 90% (punane), 95% (sinine) ja 99% (must)",
+       x = "Sugu",
+       y = "Usaldus (skaala 0-10)")
 ```
 
 ### Lahendus
 
+Lahendus paketiga `survey`
+
+```{r ref.label = "ex_3_survey", eval = FALSE}
+```
+
 ```{r eval = FALSE}
-ee9 <- ee9 %>% 
-  mutate(gndr2 = recode(as.factor(gndr),
-                        "1" = "Mehed",
-                        "2" = "Naised"))
-
-ee9w <- svydesign(id = ~1, data = ee9, weights = ~pspwght)
-
-svyby(~trust, ~gndr2, design = ee9w, FUN = svymean, na.rm = TRUE, vartype = c("se", "ci"))
-
-svyby(~trust, ~gndr2, design = ee9w, FUN = svymean, na.rm = TRUE, vartype = c("se", "ci")) %>% 
-  ggplot(aes(gndr2, trust)) +
+svyby(~trust, ~gndr2, design = ee9w, FUN = svymean, na.rm = TRUE, vartype = c("ci")) %>% 
+  ggplot(aes(x = gndr2, y = trust)) +
   geom_point() +
   geom_errorbar(aes(ymin = ci_l, ymax = ci_u), width = 0.1) +
-  xlab("Sugu") +
-  ylab("Eluga rahulolu")
-  
-svyby(~trust, ~gndr2, design = ee9w, FUN = svymean, na.rm = TRUE, vartype = "se") %>% 
-  confint(level = 0.9)
+  labs(title = "Usaldus siseriiklike institutsioonide vastu soo lõikes",
+       subtitle = "Aritmeetilised keskmised usaldusvahemikega usaldusnivool 95%",
+       x = "Sugu",
+       y = "Usaldus (skaala 0-10)")
+```
 
-svyby(~trust, ~gndr2, design = ee9w, FUN = svymean, na.rm = TRUE, vartype = "se") %>% 
-  confint(level = 0.99)
+
+Lahendus paketiga `srvyr` + joonis usaldusvahemikega erinevatel usaldusnivoodel
+
+```{r ref.label = "ex_3_srvyr", eval = FALSE}
 ```
 
 ## Ülesanne 4.4 {.tabset .tabset-fade .tabset-pills}
 
 ### Küsimus
 
-Läheme tagasi eelmise korra praktikumiülesande juurde, kus arvutasite usaldusindeksi jaotusparameetrid diskrimineerimise tajumise lõikes. Arvutage nüüd nende kahe grupi puhul lisaks keskmistele ka keskmiste usaldusvahemikud usaldusnivool 95% ja esitage need joonisel. 
+Läheme tagasi eelmise korra praktikumieelse ülesande juurde, kus arvutasite usaldusindeksi jaotusparameetrid diskrimineerimise tajumise lõikes. Arvutage nüüd nende kahe grupi puhul lisaks keskmistele ka keskmiste usaldusvahemikud usaldusnivool 95% ja esitage need joonisel. 
 
-a. Millise järelduse tegite eelmine kord ainult keskmiste põhjal, millise teekiste nüüd, vaadates lisaks ka keskmiste usaldusvahemikke?
+a. Millise järelduse tegite eelmine kord usaldustaseme erinevuse kohta kahes grupis ainult keskmiste põhjal, millise teeksite nüüd, vaadates lisaks ka keskmiste usaldusvahemikke?
 b. Nende puhul, kes enda suhtes diskrimineerimist tajuvad, on usaldusindeksi keskmise usaldusvahemik märkimisväärselt laiem. Miks see nii võib olla, miks on nende keskmise hinnangu puhul n-ö määramatust oluliselt rohkem?
 
 ### Tulemus
 
-```{r echo = FALSE}
+Väljund paketiga `survey`
+
+```{r ex_4_survey, echo = FALSE}
 ee9 <- ee9 %>% 
   mutate(dscrgrp2 = recode(as.factor(dscrgrp),
                         "1" = "Tajub",
                         "2" = "Ei taju"))
 
 ee9w <- svydesign(id = ~1, data = ee9, weights = ~pspwght)
+svyby(~trust, ~dscrgrp2, design = ee9w, FUN = svymean, na.rm = TRUE, vartype = "ci")
+```
 
-svyby(~trust, ~dscrgrp2, design = ee9w, FUN = svymean, na.rm = TRUE, vartype = c("se", "ci"))
+Väljund paketiga `srvyr`
 
-svyby(~trust, ~dscrgrp2, design = ee9w, FUN = svymean, na.rm = TRUE, vartype = c("se", "ci")) %>% 
-  ggplot(aes(dscrgrp2, trust)) +
+```{r ex_4_srvyr, echo = FALSE}
+ee9 <- ee9 %>% 
+  mutate(dscrgrp2 = recode(as.factor(dscrgrp),
+                        "1" = "Tajub",
+                        "2" = "Ei taju"))
+
+trust_ci_dscrgrp <- ee9 %>% 
+  as_survey_design(id = 1, strata = stratum, weights = pspwght) %>% 
+  group_by(dscrgrp2) %>% 
+  summarise(trust_keskmine = survey_mean(trust, na.rm = TRUE, vartype = "ci"))
+
+trust_ci_dscrgrp
+
+trust_ci_dscrgrp %>% 
+  drop_na(dscrgrp2) %>% 
+  ggplot(aes(x = dscrgrp2, y = trust_keskmine)) +
   geom_point() +
-  geom_errorbar(aes(ymin = ci_l, ymax = ci_u), width = 0.1) +
-  xlab("Enda suhtes diskrimineerimise tajumine") +
-  ylab("Eluga rahulolu")
+  geom_errorbar(aes(ymin = trust_keskmine_low, ymax = trust_keskmine_upp), width = 0.1) +
+  labs(title = "Usaldus siseriiklike institutsioonide vastu tajutud diskrimineerimise lõikes",
+       subtitle = "Aritmeetilised keskmised usaldusvahemikega usaldusnivool 95%",
+       x = "Diskrimineerimise tajumine",
+       y = "Usaldus (skaala 0-10)")
+```
 
+Usalduse jaotusparameetrid tajutud diskrimineerimise lõikes (võib olla vajalik b-küsimusele vastamiseks)
+
+```{r ex_4_param, echo = FALSE}
 ee9 %>% 
   drop_na(trust, dscrgrp2) %>% 
   group_by(dscrgrp2) %>% 
@@ -264,197 +320,64 @@ ee9 %>%
 
 ### Lahendus
 
+Lahendus paketiga `survey`
+
+```{r ref.label = "ex_4_survey", eval = FALSE}
+```
+
 ```{r eval = FALSE}
-ee9 <- ee9 %>% 
-  mutate(dscrgrp2 = recode(as.factor(dscrgrp),
-                        "1" = "Tajub",
-                        "2" = "Ei taju"))
-
-ee9w <- svydesign(id = ~1, data = ee9, weights = ~pspwght)
-
-svyby(~trust, ~dscrgrp2, design = ee9w, FUN = svymean, na.rm = TRUE, vartype = c("se", "ci"))
-
-svyby(~trust, ~dscrgrp2, design = ee9w, FUN = svymean, na.rm = TRUE, vartype = c("se", "ci")) %>% 
+svyby(~trust, ~dscrgrp2, design = ee9w, FUN = svymean, na.rm = TRUE, vartype = "ci") %>% 
   ggplot(aes(dscrgrp2, trust)) +
   geom_point() +
   geom_errorbar(aes(ymin = ci_l, ymax = ci_u), width = 0.1) +
-  xlab("Enda suhtes diskrimineerimise tajumine") +
-  ylab("Eluga rahulolu")
+  labs(title = "Usaldus siseriiklike institutsioonide vastu tajutud diskrimineerimise lõikes",
+       subtitle = "Aritmeetilised keskmised usaldusvahemikega usaldusnivool 95%",
+       x = "Diskrimineerimise tajumine",
+       y = "Usaldus (skaala 0-10)")
+```
 
-ee9 %>% 
-  drop_na(trust, dscrgrp2) %>% 
-  group_by(dscrgrp2) %>% 
-  summarise(keskmine = weighted_mean(trust, w = pspwght), 
-            std = weighted_sd(trust, w = pspwght),
-            alum_kvart = weighted_quantile(trust, w = pspwght, probs = 0.25),
-            mediaan = weighted_quantile(trust, w = pspwght, probs = 0.5),
-            ylem_kvart = weighted_quantile(trust, w = pspwght, probs = 0.75),
-            iqr = ylem_kvart - alum_kvart,
-            mad = weightedMad(trust, constant = 1),
-            min = min(trust), 
-            max = max(trust), 
-            asymm = weighted_skewness(trust, w = pspwght),
-            jarskus = weighted_kurtosis(trust, w = pspwght),
-            arv = sum(pspwght)) %>% 
-  print(width = Inf)
+Lahendus paketiga `srvyr`
+
+```{r ref.label = "ex_4_srvyr"}
+```
+
+Usaldusindeksi jaotusparameetrid
+
+```{r ref.label = "ex_4_param", eval = FALSE}
 ```
 
 
 ## Ülesanne 4.5 {.tabset .tabset-fade .tabset-pills}
 
-### Küsimus
+### Küsimus 
 
-Laadige sisse ESS-i Eesti andmed aastatest 2004-2020. Kuidas on ajavahemikus 2004-2018 muutunud eluga rahulolu pensionäride seas? Lihtsuse mõttes jätke 2020. aasta andmed esialgu välja, sest selle aasta kohta pole veel koostatud järelkihistamiskaalu tunnust.
+Arvutage paketi `srvyr` abiga Euroopa Sotsiaaluuringu Suurbritannia 10. laine andmete põhjal tunnuse impcntr (hinnang selle kohta, kui palju sisserändajaid peaks Suurbritanniasse lubama vaesematest riikidest väljastpoolt Euroopat) protsentjaotus koos protsentnäitajate usalduspiiridega, võttes arvesse valikudisaini ja kaaludes andmeid järelkihistuskaalu tunnusega.
 
-a. Kontrollige, kas antud juhul oleks üldse kohane võtta eluga rahulolu jaotused kokku aritmeetiliste keskmiste abil. Mille alusel saate seda hinnata?
-b. Koostage joondiagramm, mis näitaks keskmise eluga rahulolu muutust uuritud aastate jooksul. Joonise paremaks mõistmiseks asendage küsitluslainete numbrid aastaarvudega. Milliseid trende sellise joonise põhjal ütleksite esinevat?
-c. Arvutage ka keskmiste usalduspiirid ja pange need koos keskmistega joondiagrammile.
-d. Milliste aastate puhul saab öelda (võttes aluseks keskmiste usaldusvahemikud), et keskmine eluga rahulolu on muutunud?
-e. Kuivõrd on erinevate aastate näitajad üleüldse võrreldavad? Kui tekib kahtlus, kas eri aastate andmed on võrreldavad, püüdke seda kontrollida andmete pealt.
+Mis tüüpi valimiga on Suurbritannia puhul tegu? Saate selle kohta infot [ESS-i andmeportaalist](https://ess-search.nsd.no/en/study/172ac431-2a06-41df-9dab-c1fd8f3877e7) (*Country Documentation* => *United Kingdom*). Millised funktsiooni `as_survey_design` argumendid peaksid sellest tulenevalt valikudisaini seadistamisel kirjas olema? 
 
-### Vihje a
-
-Aritmeetilised keskmised sobivad hästi juhul, kui eluga rahulolu jaotus on eri lainetes enam-vähem sümmeetriline. Seda saab kontrollida asümmeetriakordaja abil, infoks võib arvutada ka järskuskordaja (kõrge järskuskordaja väärtus näitab erindite olemasolu). Kaalutud kujuparameetreid saab arvutada nt paketi TAM funktsioonidega.
-
-### Vihje b
-
-Kui arvutate kaalutud keskmised iga laine kohta, saate need ggploti abil esitada joonisel, kasutades funktsiooni geom_line.
-
-### Vihje d
-
-Rahulolu keskmiste erinevuse uurimisel võiks silmas pidada ka asjaolu, et joonisel on Usaldusvahemikke rohkem, mistõttu on suurem oht, et vähemalt üks usaldusvahemik ei pruugi rahulolu tegelikku keskmist katta.
-
-### Vihje e
-
-Erinevate aastate võrreldavust võib mõjutada näiteks asjaolu, et vanaduspensioniiga on aastatega tõusnud - ei oska mälu järgi öelda, mis aja jooksul täpselt ja kui palju, aga kui eluga rahulolu on seotud vanusega, võib vanaduspensioniea tõstmine eluga rahulolu keskmisi hinnanguid põhimõtteliselt mõjutada. Siinkohal võib uurida keskmise ja mediaanvanuse muutumist pensionäride seas läbi aja, vanuse kujuparameetreid ja miks mitte ka vaadata vanuse jaotust läbi aja graafiliselt.
+Kui suureks saab hinnata nende inimeste osakaalu Suurbritannias, kes ei lubaks riiki ühtegi sisserändajat vaesematest riikidest väljastpoolt Euroopat? Kui suureks saab hinnata nende osakaalu, kes lubaksid riiki palju selliseid sisserändajaid?
 
 ### Tulemus
 
-```{r echo = FALSE}
-ee <- read_spss("data/ess_ee_2_10.sav")
+```{r ex_5, echo = FALSE}
+ess10 <- read_spss("data/ess10.sav")
 
-ee <- ee %>% 
-  filter(essround < 10)
+impcntr_gb <- ess10 %>% 
+  filter(cntry == "GB") %>% 
+  as_survey_design(ids = psu, strata = stratum, weights = pspwght) %>% 
+  group_by(impcntr) %>% 
+  summarise(prop = survey_prop(vartype = "ci"))
 
-ee %>% 
-  filter(rtrd == 1) %>% 
-  group_by(essround) %>% 
-  summarise(skew = weighted_skewness(stflife, w = pspwght), kurt = weighted_kurtosis(stflife, w = pspwght))
+impcntr_gb 
 
-ee %>% 
-  filter(rtrd == 1) %>% 
-  group_by(essround) %>% 
-  summarise(mean = weighted_mean(stflife, w = pspwght)) %>% 
-  ggplot(aes(essround, mean)) +
-  geom_line() +
-  scale_x_continuous(breaks = 2:9, labels = seq(2004, 2018, 2)) +
-  xlab("Aasta") +
-  ylab("Eluga rahulolu")
-
-ee_rtrd <- ee %>% 
-  filter(rtrd == 1)
-
-ee_rtrdw <- svydesign(id = ~1, data = ee_rtrd, weights = ~pspwght)
-
-svyby(~stflife, ~essround, design = ee_rtrdw, FUN = svymean, na.rm = TRUE, vartype = c("se", "ci")) %>% 
-  ggplot(aes(essround, stflife)) +
-  geom_line() +
-  geom_errorbar(aes(ymin = ci_l, ymax = ci_u), width = 0.2) +
-  scale_x_continuous(breaks = 2:9, labels = seq(2004, 2018, 2)) +
-  xlab("Aasta") +
-  ylab("Eluga rahulolu")
-
-ee_rtrd %>% 
-  drop_na(agea) %>% 
-  group_by(essround) %>% 
-  summarise(mean = weighted_mean(agea), median = weightedMedian(agea))
-
-svyby(~agea, ~essround, design = ee_rtrdw, FUN = svymean, na.rm = TRUE, vartype = c("se", "ci")) %>% 
-  ggplot(aes(essround, agea)) +
-  geom_line() +
-  geom_errorbar(aes(ymin = ci_l, ymax = ci_u), width = 0.2) +
-  scale_x_continuous(breaks = 2:9, labels = seq(2004, 2018, 2)) +
-  xlab("Aasta") +
-  ylab("Vanus")
-
-ee_rtrd %>% 
-  group_by(essround) %>% 
-  summarise(skew = weighted_skewness(agea, w = pspwght), kurt = weighted_kurtosis(agea, w = pspwght))
-
-ee_rtrd %>% 
-  ggplot(aes(agea, weights = pspwght)) +
-  geom_histogram() +
-  facet_wrap(~essround) +
-  xlab("Vanus") +
-  ylab("Indiviidide arv")
+impcntr_gb %>% 
+  ggplot(aes(x = prop, y = as_factor(impcntr))) +
+  geom_point() +
+  geom_errorbar(aes(xmin = prop_low, xmax = prop_upp), width = 0.2)
 ```
 
-### Lahendus
+### Lahendus 
 
-```{r eval = FALSE}
-ee <- read_spss("data/ess_ee_2_10.sav")
-
-ee <- ee %>% 
-  filter(essround < 10)
-
-ee %>% 
-  filter(rtrd == 1) %>% 
-  group_by(essround) %>% 
-  summarise(skew = weighted_skewness(stflife, w = pspwght), kurt = weighted_kurtosis(stflife, w = pspwght))
-
-ee %>% 
-  filter(rtrd == 1) %>% 
-  group_by(essround) %>% 
-  summarise(mean = weighted_mean(stflife, w = pspwght)) %>% 
-  ggplot(aes(essround, mean)) +
-  geom_line() +
-  scale_x_continuous(breaks = 2:9, labels = seq(2004, 2018, 2)) +
-  xlab("Aasta") +
-  ylab("Eluga rahulolu")
-
-ee_rtrd <- ee %>% 
-  filter(rtrd == 1)
-
-ee_rtrdw <- svydesign(id = ~1, data = ee_rtrd, weights = ~pspwght)
-
-svyby(~stflife, ~essround, design = ee_rtrdw, FUN = svymean, na.rm = TRUE, vartype = c("se", "ci")) %>% 
-  ggplot(aes(essround, stflife)) +
-  geom_line() +
-  geom_errorbar(aes(ymin = ci_l, ymax = ci_u), width = 0.2) +
-  scale_x_continuous(breaks = 2:9, labels = seq(2004, 2018, 2)) +
-  xlab("Aasta") +
-  ylab("Eluga rahulolu")
-
-ee_rtrd %>% 
-  drop_na(agea) %>% 
-  group_by(essround) %>% 
-  summarise(mean = weighted_mean(agea), median = weightedMedian(agea))
-
-svyby(~agea, ~essround, design = ee_rtrdw, FUN = svymean, na.rm = TRUE, vartype = c("se", "ci")) %>% 
-  ggplot(aes(essround, agea)) +
-  geom_line() +
-  geom_errorbar(aes(ymin = ci_l, ymax = ci_u), width = 0.2) +
-  scale_x_continuous(breaks = 2:9, labels = seq(2004, 2018, 2)) +
-  xlab("Aasta") +
-  ylab("Vanus")
-
-ee_rtrd %>% 
-  group_by(essround) %>% 
-  summarise(skew = weighted_skewness(agea, w = pspwght), kurt = weighted_kurtosis(agea, w = pspwght))
-
-ee_rtrd %>% 
-  ggplot(aes(agea, weights = pspwght)) +
-  geom_histogram() +
-  facet_wrap(~essround) +
-  xlab("Vanus") +
-  ylab("Indiviidide arv")
+```{r ref.label = "ex_5", eval = FALSE}
 ```
 
-### Tõlgendus
-
-a. Aritmeetilised keskmised sobivad, sest asümmeetriakordajad on kõigi küsitluslainete puhul üsna lähedal nullile või vähemalt vahemikus -1 kuni 1, sama kehtib järskuskordajate kohta.
-b. Pelgalt keskmiste põhjal võiks öelda, et 2004-2010 keskmine eluga rahulolu stabiilselt tõuseb, seejärel 2012 langeb ja 2014 püsib samal tasemel. 2016 toimub pensionäride keskmises eluga rahulolus järsk tõus, tõus jätkub 2018. Siiski tuleb silmas pidada, et tegu on valimikeskmistega, keskmiste tegelikud väärtused populatsioonis võivad mõnevõrra erineda ja populatsiooni kohta saab paremini järeldusi teha keskmiste usaldusvahemike alusel.
-c. See osa ülesandest oli puhtalt tehniline.
-d. Kuigi 2004-2006 keskmiste usaldusvahemikud natuke kattuvad, on kattuvus väga väike ja keskmiste erinevust võiks väita. 2006-2008 ja 2008-2010 puhul see nii kindel ei ole, küll aga saab võita, et vahemikus 2004-2008 ja 2006-2010 on keskmine eluga rahulolu tõusnud. 2010-2012 usaldusvahemikud ei kattu ja keskmiste erinevus on ilmne, 2012-2014 keskmiste erinevust väita ei saa. 2014-2016 on eluga rahulolu tõus märkimisväärne, usaldusvahemikud ei kattu, keskmiste erinevust saab väita. 2016-2018 usaldusvahemikud kattuvad ja kuigi kummagi grupi keskmine ei jää teise grupi usaldusvahemiku sisse, võiks keskmiste erinevust täpsemalt kontrollida (sellega tegeleme järgmine kord).
-Eelnevad tõlgendused lähtuvad olukorrast, kus võrdluspaarid on teineteisest justkui isoleeritud, st justkui vaataksime korraga ainult kahe aasta näitajaid, unustades, et meid huvitavad võrdlused ka teiste aastatega. Tegelikult tegeleme siin mitmete erinevate usaldusvahemike tõlgendamise ja paaride võrdlemisega, nii et peame (kas või hinnanguliselt, umbkaudu) arvesse võtma asjaolu, et arvutades usaldusvahemikud usaldusnivool 95% ja hinnates kõigi võrdluspaaride tulemusi samaaegselt ei ole võimaliku vea ulatus kokku 5%, vaid palju suurem. Seetõttu on võimalik, et ka ainult vähe või peaaegu kattuvate usaldusvahemike korral keskmised populatsioonis tegelikult ei erine. Praktiline järeldus antud tõsiasjast on, et järjestikuste aastate erinevused ei pruugi olla piisavalt suured, et tõlgendustes aastast aastasse muutusi esile tuua (välja arvatud 2010-2012 ja 2014-2016 suured erinevused), küll aga saab võita pikemaajaliste trendide olemasolu, nt tõus 2004-2010 ja ka 2014-2018.
-e. Nii pensionäride keskmine vanus kui ka mediaanvanus valimites aja jooksul üldiselt tõusevad, ka keskmise vanuse usaldusvahemike põhjal võib näha vähemalt osade aastate puhul erinevust. Kas see iseenesest veel rahulolu keskmisi kallutab, ei tea, kuid kui kontrollime lisaks ka vanuse kujuparameetreid (mida oleks muidugi võinud teha juba enne keskmiste ja mediaanide arvutamist), torkavad silma mõned suured asümmeetriakordajad ja järskuskordajad. Suur positiivne järskuskordaja viitab erindite olemasolule, vanuse jaotuses võiks pigem eeldada nende puudumist. Vaadeldavas rühmas võib küll esineda mõni raugaealine, aga sellisel juhul peaks asümmeetriakordaja olema positiivne, antud juhul on peaaegu kõigis lainetes see hoopis negatiivne (mitte palju, aga piisavalt, et kahtlusi tekitada). Selgust toovad vanuse histogrammid - osades küsitluslainetes esineb ka indiviide, kelle vanus on alla pensioniea, isegi nii noori kui umbes 25 aastat. Tegu ei ole ilmselt tehnilise veaga, vaid pensionäride hulka on (vähemalt osades lainetes) ilmselt kaasatud lisaks eelpensionil olijatele ka töövõimetus- ja toitjakaotuspensioni saajad. Asjaolu, et uuritavasse rühma on kaasatud ka muud pensionärid peale vanaduspensioni saajate, ei pruugi iseenesest sisulises mõttes probleem olla. Problemaatiline on eelkõige see, et tundub, et eri liiki pensionäride antud rühma kaasamine pole eri lainetes olnud ühetaoline. ESS-i on Eestis üle aastate viinud läbi erinevad küsitlusfirmad ja on võimalik, et välitöö käigus on intervjueerijad saanud küsitlusfirmalt erinevaid suuniseid. Ka kõige parema tahtmise ja süstemaatilise ankeedi ettevalmistuse puhul on väga keeruline tagada, et selliseid ebakõlasid ei esineks ühegi ankeediküsimuse puhul, eriti kui taolist mahukat uuringut korraldatakse korduvalt - juba ankeedi tõlkimisprotsess on nädalate ja kuude pikkune, ankeedi ettevalmistamine tervikuna on mõõdetav aastates.
